@@ -1,0 +1,140 @@
+---
+title: "Simple Web Scrapping with R"
+output: html_document
+---
+
+In R, the package `rvest` makes it easy to scrape (or harvest) data from html web pages. The package was inspired by libraries like [beautiful soup](https://www.crummy.com/software/BeautifulSoup/), which was written in Python. It is designed to work with [magrittr](https://github.com/tidyverse/magrittr) so that you can express complex operations as elegant pipelines composed of simple, easily understood pieces. Install it with
+
+
+```{r}
+# install.packages("rvest")
+library(rvest)
+library(tidyverse)
+library(stringr)
+
+```
+
+# List of countries from Wikipedia
+
+Suppose I want to have a list of all countries and their population. This data is available at: https://en.wikipedia.org/wiki/List_of_countries_by_population_(United_Nations)
+
+To read the html page from the Internet:
+
+```{r}
+page <- read_html("https://en.wikipedia.org/wiki/List_of_countries_by_population_(United_Nations)")
+```
+
+Then, we extract all available tables from the web page
+
+```{r}
+tables <- html_table(page)
+```
+
+This returns a list of tables.
+
+```{r}
+length(tables)
+```
+
+We can look at each table individually,
+
+```{r}
+head(tables[[1]])
+```
+
+or all of them at once
+
+```{r}
+tables
+```
+
+If we return to the website here:
+
+[https://en.wikipedia.org/wiki/List_of_countries_by_population_(United_Nations)](https://en.wikipedia.org/wiki/List_of_countries_by_population_(United_Nations))
+
+we see that this reflects the content on the website.
+
+# Cleaning the data
+
+When extracting data from the web with `rvest` we are likely to need to do substantial cleaning. For example, let's look at the first table
+
+```{r}
+head(tables[[2]])
+glimpse(tables[[2]])
+```
+
+First, we save the body of table into a different object and fix the header
+
+```{r}
+countries <- tables[[2]]
+names(countries) <- c("Rank", "Country", "Continent",
+                      "Region", "Population_2018",
+                      "Population_2019", "Change")
+head(countries)
+```
+
+**Question:** Remove the first line as it is the total, not about the individual country
+
+```{r}
+countries %>% 
+  filter(Country != "World") -> countries
+
+head(countries)
+```
+
+We observe that numeric columns are all coded as `chr`, indicating a *string* type.
+
+```{r}
+countries$Rank <- as.numeric(countries$Rank)
+
+```
+
+
+## dont run this one
+```{r}
+countries$Population_2018 <- as.numeric(countries$Population_2018)
+head(countries)
+```
+
+Oopses! There is a message when converting strings to numbers. Let's re-run everything, but the last step. You will see that column `Population_2018` has numbers with comma separators at the thousands and `as.numeric()` function can not handle that. To work around the issue, we first remove comma and then use `as.numeric()` function again
+
+```{r}
+countries$Population_2018 <- 
+  as.numeric(str_remove_all(countries$Population_2018, ","))
+glimpse(countries)
+```
+
+**Question:** Convert data in `Population_2019` and `Change` columns into numeric values.
+
+```{r}
+countries$Population_2019 <- 
+  as.numeric(str_remove_all(countries$Population_2019, ","))
+glimpse(countries)
+```
+
+## dont run this one 
+```{r}
+countries$Change <- 
+  as.numeric(str_remove_all(countries$Change, "%"))
+```
+
+```{r}
+str_remove_all(countries$Change, "%") %>% 
+  str_replace_all(str_sub(countries$Change[11], 1,1), "-") %>% 
+  as.numeric() ->
+  countries$Change
+```
+
+**Question:** The column `Country` also need to be cleaned up as some coutry names following by a notion of a footnote. 
+
+```{r}
+countries$Country <- str_remove(countries$Country, "\\[.\\]")
+View(countries)
+```
+
+Once we've done with cleaning the data set, we should save it to disk for further analysis
+
+```{r}
+write_csv(countries, "countries.csv")
+```
+

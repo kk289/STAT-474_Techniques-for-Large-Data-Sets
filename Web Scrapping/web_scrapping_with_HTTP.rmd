@@ -1,0 +1,264 @@
+---
+title: "Simple Web Sccrapping with R"
+output: html_document
+---
+
+In R, the package `rvest` makes it easy to scrape (or harvest) data from html web pages. The package was inspired by libraries like [beautiful soup](https://www.crummy.com/software/BeautifulSoup/), which was written in Python. It is designed to work with [magrittr](https://github.com/tidyverse/magrittr) so tgat you can express complex operations as elegant pipelines composed of simple, easily understood pieces. Install it with
+
+
+```{r}
+#install.packages("rvest")
+library(tidyverse)
+library(rvest)
+library(xml2)
+```
+
+# Examining Solar Energy Usage:
+
+Suppose I am interested in looking at photovoltaic output for California. This data is aggregated on the web here: https://ww2.energy.ca.gov/almanac/renewables_data/solar/index_cms.php
+
+To read the html page from the Internet:
+
+```{r}
+page <- read_html("https://ww2.energy.ca.gov/almanac/renewables_data/solar/index_cms.php")
+```
+
+Then, we extract all available tables from the web page
+
+```{r}
+tables <- html_table(page)
+```
+
+This returns a list of tables.
+
+```{r}
+length(tables)
+```
+
+We can look at each table individually,
+
+```{r}
+head(tables[[1]])
+```
+
+
+If we return to the website here:
+
+[https://ww2.energy.ca.gov/almanac/renewables_data/solar/index_cms.php](https://ww2.energy.ca.gov/almanac/renewables_data/solar/index_cms.php)
+
+we see that this reflects the content on the website.
+
+# Cleaning the data
+
+When extracting data from the web with `rvest` we are likely to need to do substantial cleaning. For example, let's look at the first table
+
+```{r}
+head(tables[[1]])
+str(tables[[1]])
+```
+
+First, we save the body of table into a different object and fix the header
+
+```{r}
+pv <- tables[[1]][-1,]
+names(pv) <- tables[[1]][1,]
+head(pv)
+```
+
+How's about the end of the table
+
+```{r}
+tail(pv)
+```
+
+Since a tidy data should have row represent an observational unit, the last row should be removed
+
+```{r}
+pv <- pv[-nrow(pv), ]
+```
+
+While it seems that we have finished cleaning up the data, it is important to check the data types of columns:
+
+```{r}
+str(pv)
+```
+
+We observe that numeric columns are all coded as `chr`, indicating a *string* type. 
+
+```{r}
+pv$`Capacity (MW)` <- as.numeric(pv$`Capacity (MW)`)
+pv$`Net MWh` <- as.numeric(str_remove_all(pv$`Net MWh`, ","))
+```
+
+Final check:
+
+```{r}
+View(pv)
+```
+
+# Scraping HTML Table with HTTP protocol
+
+In the previous demonstration, we have work together to gather information about photovoltaic and thermal solar energy produced last year (2018) in California. What if we want to examine these sources overtime?
+
+**Question:** Try opening the page using developer tools in Chrome or Safari. Which HTML element/node is responsible to obtain data from different years?
+
+
+Notice that we can select a different year. To do this we would need to send some additional information to the web server. If you look at the HTML source on the right you see that the website requires POSTing additional values to access a particular year.
+
+We can do this using the R library `httr`, which facilitates the request-response HTTP protocol. 
+
+```{r}
+library(httr)
+```
+
+
+## The `httr` basics
+
+Corresponding to the **GET** and **POST** methods in HTTP protocol are the `GET()` and `POST()` functions in `httr` package. To send a GET request to the website, we can run
+
+```{r}
+r <- GET("https://ww2.energy.ca.gov/almanac/renewables_data/solar/index_cms.php")
+```
+
+This gives you a response object. Printing a response object gives you some useful information: the actual url used (after any redirects), the http status, the file (content) type, the size, and if it's a text file, the first few lines of output.
+
+```{r}
+r
+#shows header only
+```
+
+You can pull out important parts of the response with various helper methods, or dig directly into the object:
+
+```{r}
+status_code(r)
+headers(r)
+```
+
+## The response
+
+The data sent back from the server consists of three parts: the status line, the headers and the body. The most important part of the status line is the http status code: it tells you whether or not the request was successful. I'll show you how to access that data, then how to access the body and headers.
+
+### The status code 
+
+The status code is a three digit number that summarises whether or not the request was successful (as defined by the server that you're talking to). You can access the status code along with a descriptive message using `http_status()`:
+
+```{r}
+http_status(r)
+```
+
+A successful request always returns a status of 200. Common errors are 404 (file not found) and 403 (permission denied). If you're talking to web APIs you might also see 500, which is a generic failure code (and thus not very helpful). 
+
+### The body
+
+To access the body of the request, we use the function `content()` with one of types: `text`, `raw` and `parsed`. 
+
+```{r}
+content(r, "text")
+```
+
+`httr` will automatically decode content from the server using the encoding supplied in the content-type HTTP header. Unfortunately you can't always trust what the server tells you, so you can override encoding if needed:
+
+```{r}
+content(r, "text", encoding = "ISO-8859-1")
+```
+
+
+### The headers
+
+Access response headers with `headers()`:
+
+```{r}
+headers(r)
+```
+
+## The request
+
+Like the response, the request consists of three pieces: a status line, headers and a body. The status line defines the http method (GET, POST, DELETE, etc) and the url. You can send additional data to the server in the url (with the query string), in the headers (including cookies) and in the body of POST(), PUT() and PATCH() requests.
+
+### The url query string
+
+A common way of sending simple key-value pairs to the server is the query string: e.g. http://httpbin.org/get?key=val. httr allows you to provide these arguments as a named list with the query argument. For example, if you wanted to pass key1=value1 and key2=value2 to http://httpbin.org/get you could do:
+
+```{r}
+# Don't run, just an example, not flow with the running website
+r_tmp <- GET("http://httpbin.org/get", 
+  query = list(key1 = "value1", key2 = "value2")
+)
+```
+
+### Custom headers
+
+You can add custom headers to a request with `add_headers()`:
+
+```{r}
+r_tmp <- GET("http://httpbin.org/get", add_headers(Name = "Tuan"))
+str(content(r_tmp)$headers)
+```
+
+### Request body
+
+When POST()ing, you can include data in the body of the request. httr allows you to supply this in a number of different ways. The most common way is a named list:
+
+```{r}
+r_tmp <- POST("http://httpbin.org/post", body = list(a = 1, b = 2, c = 3))
+```
+
+Back to the California solar energy website, to request data in 2012, we run
+
+```{r}
+r <- POST("https://ww2.energy.ca.gov/almanac/renewables_data/solar/index_cms.php",
+          body = list(newYear = "2012"))
+```
+
+The body of the response will contain the web page itself. By using the `rvest` package, we can read and extract tables in the same manner as we did in the previous part
+
+```{r}
+page <- read_html(content(r, "text", encoding = "ISO-8859-1"))
+tables <- html_table(page)
+head(tables[[1]])
+```
+
+**Question 6:** Extract the Solar Thermal Energy table. Write a user-defined function to automate the extraction process with the input being the `tables`.
+
+
+
+Once we can scrape data for one year, it is tempting to extract data for all available years. If we return to the web page and explore the DOM we find that the form has an `id` (which is `goYear`). The `div id` are (should be) unique so we can look for this form in the DOM tree by sceaching for the id
+
+```{r}
+page %>% html_nodes("#goYear")
+```
+
+Notice that this form contains several option tags. We can find all the option tags in this form:
+
+```{r}
+page %>% html_nodes("#goYear option") %>% html_text()
+```
+
+Another option to extract the list of year is to scrape the *value* attribute of each `option` tag.
+
+```{r}
+list_years <- page %>% html_nodes("#goYear option") %>% html_attr("value")
+list_years
+```
+
+Now, we are ready to download all the data
+
+```{r}
+raw_pv <- data.frame()
+for (year in list_years[-1]) {
+  print("Downloading Year:", year)
+  
+  # POST request, fill in the blanks
+  r <- POST("https://ww2.energy.ca.gov/almanac/renewables_data/solar/index_cms.php")
+  
+  tables <- html_read(content(r, "text", encoding = "ISO-8859-1"))
+  
+  # Cleaning up the table (use the function in the above question)
+  # Fill in the blank
+  raw_pv <- rbind(raw_pv, ...)
+}
+```
+
+**Question:** Complete the above codes.
+
+**Question:** Create the line chart to present the change of produced solar energy output over time.
