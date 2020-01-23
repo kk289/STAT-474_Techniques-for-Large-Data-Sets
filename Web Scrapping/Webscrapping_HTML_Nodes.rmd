@@ -1,0 +1,149 @@
+---
+title: "Web Scraping with R"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval=FALSE)
+```
+
+## Scraping HTML Text
+
+Vast amount of information exists across the interminable webpages that exist online. Much of this information are "unstructured" text that may be useful in our analyses. This section covers the basics of scraping these texts from online sources. You can see the demo codes from previous lecture to see how to scrape "structured" form (i.e., tables).
+
+Throughout this section I will illustrate how to extract different text components of webpages by dissecting the [Wikipedia page on web scraping](https://en.wikipedia.org/wiki/Web_scraping). However, its important to first cover one of the basic components of HTML elements as we will leverage this information to pull desired information. 
+
+HTML elements/nodes are written with a start tag, an end tag, and with the content in between: `<tagname>content</tagname>`. The tags which typically contain the textual content we wish to scrape, and the tags we will leverage in the next section, include:
+
+- `<h1>`, `<h2>`, ... , `<h6>`: Largest heading, second largest heading, etc.
+- `<p>`: Paragraph elements
+- `<ul>`: Unordered bulleted list
+- `<ol>`: Ordered list
+- `<li>`: Individual List item
+- `<div>`: Division or section
+- `<table>`: Table
+
+For example, text in paragraph form that you see online is wrapped with the HTML paragraph tag `<p>` as in:
+
+```
+<p>
+This paragraph represents
+a typical text paragraph
+in HTML form
+</p>
+```
+
+It is through these tags that we can start to extract textual components (also referred to as nodes) of HTML webpages.
+
+## Scraping HTML Nodes
+
+To scrape online text we'll make use of the `rvest` package, with the help of pipe operator (`%>%`) for code clarity. To extract text from a webpage of interest, we specify what HTML elements we want to select by using `html_nodes()`. For instance, if we want to scrape the primary heading for the [Wikipedia page on web scraping](https://en.wikipedia.org/wiki/Web_scraping) webpage we simply identify the `<h1>` node as the node we want to select. `html_nodes()` will identify all `<h1>` nodes on the webpage and return the HTML element. In our example we see there is only one `<h1>` node on this webpage.
+
+```{r}
+scraping_wiki <- read_html("https://en.wikipedia.org/wiki/Web_scraping")
+
+scraping_wiki %>%
+        html_nodes("h1")
+```
+
+To extract only the heading text for this `<h1>` node, and not include all the HTML syntax we use `html_text()` which returns the heading text we see at the top of the Web Scraping Wikipedia page.
+
+```{r}
+scraping_wiki %>%
+  html_nodes("h1") %>%
+  html_text()
+```
+
+**Question 1:** Scrape the webpage and count the number of second level headings.
+
+```{r}
+# Your code goes here
+scraping_wiki %>%
+  html_node("h2") %>%
+  html_text()
+
+##to see everything in h2
+scraping_wiki %>%
+  html_nodes("h2") %>%
+  html_text()
+```
+
+Next, we can move on to extracting much of the text on this webpage which is in paragraph form. We can follow the same process illustrated above but instead we'll select all `<p>` nodes. This selects the 31 paragraph elements from the web page; which we can examine by subsetting the list `p_nodes` to see the first line of each paragraph along with the HTML syntax. Just as before, to extract the text from these nodes and coerce them to a character string we simply apply `html_text()`.
+
+```{r}
+p_nodes <- scraping_wiki %>% 
+        html_nodes("p")
+
+length(p_nodes)
+head(p_nodes)
+
+p_text <- scraping_wiki %>%
+        html_nodes("p") %>%
+        html_text()
+
+p_text[1]
+```
+
+Not too bad; however, we may not have captured all the text that we were hoping for. Since we extracted text for all <p> nodes, we collected all identified paragraph text; however, this does not capture the text in the bulleted lists. For example, majority of text in the section "Software" are in the bulleted list format. You can access the unordered list via `<ul>` tag or items on the lists via `<li>`.
+
+**Question 2:** Tryout to scrape via both tags (i.e., `<ul>` and `<li>`) and comment on the results using either tags.
+
+```{r}
+ul_text <- scraping_wiki %>%
+        html_nodes("ul") %>%
+        html_text()
+length(ul_text)
+head(ul_text)
+```
+
+Ans: As we can see when we run the code. What is scraped is not entirely appropriate. We have a lines of tab spaces (\t). The web-scraping isn't as clean as it would be with precise copy and paste done by a human.
+```{r}
+li_text <- scraping_wiki %>%
+        html_nodes("li") %>%
+        html_text()
+
+length(li_text)
+head(li_text)
+```
+
+## Scraping specific HTML Nodes
+
+However, if we are concerned only with specific content on the webpage then we need to make our HTML node selection process a little more focused. To do this, we can use our browser's developer tools to examine the webpage we are scraping and get more details on specific nodes of interest. If you are using Chrome or Firefox you can open the developer tools by clicking F12 (Cmd + Opt + I for Mac) or for Safari you would use Command-Option-I. An additional option which is recommended by Hadley Wickham is to use [selectorgadget.com](selectorgadget.com), a Chrome extension, to help identify the web page elements you need.
+
+
+Once the developer's tools are opened your primary concern is with the element selector. This is located in the top lefthand corner of the developers tools window.
+
+![](images/element_selector.jpg)
+
+Once you've selected the element selector you can now scroll over the elements of the webpage which will cause each element you scroll over to be highlighted. Once you've identified the element you want to focus on, select it. This will cause the element to be identified in the developer tools window. For example, if I am only interested in the main body of the Web Scraping content on the Wikipedia page then I would select the element that highlights the entire center component of the webpage. This highlights the corresponding element `<div id="bodyContent" class="mw-body-content">` in the developer tools window as the following illustrates.
+
+![](images/body_content_selected.png)
+
+
+I can now use this information to select and scrape all the text from this specific `<div>` node by calling the ID name `("#mw-content-text")` in `html_nodes()`. As you can see below, the text that is scraped begins with the first line in the main body of the Web Scraping content and ends with the text in the See Also section which is the last bit of text directly pertaining to Web Scraping on the webpage. Explicitly, we have pulled the specific text associated with the web content we desire.
+
+```{r}
+body_text <- scraping_wiki %>%
+        html_nodes("#mw-content-text") %>% 
+        html_text()
+
+str_sub(body_text, 1, 20)
+```
+
+Using the developer tools approach allows us to be as specific as we desire. We can identify the class name for a specific HTML element and scrape the text for only that node rather than all the other elements with similar tags. This allows us to scrape the main body of content as we just illustrated or we can also identify specific headings, paragraphs, lists, and list components if we desire to scrape only these specific pieces of text:
+
+```{r}
+scraping_wiki %>%
+        html_nodes("#mw-content-text p:nth-child(19)") %>% 
+        html_text()
+
+# Scraping a specific list
+scraping_wiki %>%
+        html_nodes("#mw-content-text  div:nth-child(2)") %>% 
+        html_text()
+```
+
+In general, the argument of `html_nodes()` is called CSS selector. You can learn more about the CSS selectors (and even tryout some selectors) at [W3 School](https://www.w3schools.com/cssref/css_selectors.asp)
+
+
+
