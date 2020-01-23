@@ -1,0 +1,146 @@
+---
+title: "Working with APIs using R"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+library(tidyverse)
+```
+
+
+
+It is usually time-consuming to obtain data/information from web pages, which are constantly updated or layout redesigned. APIs offer a way to access data directly using a standard form. Almost all websites, that have APIs, require to register and use their token (as a way to monetize their service). In this demonstration, we use API from www.getguidelines.com, which provides medical guideline from multiple professional healthcare organizations. I've registered for the token (i.e., API key), which is 5fa1a3c865ed00ffe7518b0ff7a0c11a66183f286099931a7efc8a649b79. You can access the API enpoints from the documentation at https://getguidelines.com/?ref=apilist.fun
+
+## Accessing APIs from R
+
+APIs use the request-response protocol, which is similar to the HTTP for browsing webpages, for obtaining subset of the database. The R package `httr` provides several functions for this protocol.
+
+```{r}
+library(httr)
+```
+
+Querying an API usually involves the four steps:
+
+1. Submit the request with all necessary information, including the API key or token.
+2. Check for any server error (recall success status code is 200).
+3. Parse the response 
+4. Convert to a `data frame` or a `tibble` for further analysis.
+
+First, we set up the base URL for the API call. *Note:* There are two different base urls, one ends with "all" that provides all recommendation, while "vac" provides only vaccine-related recommendation.
+
+```{r}
+base_url <- "https://getguidelines.com/vac"
+```
+
+Next, we need to build out API request and sumbit it. We will use the function `GET` from the `httr` package, with the base url and all search parameters (API endpoints) in the form of a list to the `query` argument. In this demo, we will search for recommendations for 68 year old female about diabetes; that is, the parameters:
+
+- `age` = specific age (numeric)
+- `sex` = gender (either `m` or `f`)
+- `conditions` = specific disease (e.g., `chr` for congestive heart failure, or `dm` for diabetes)
+
+```{r}
+request <- GET(url = base_url,
+               query = list(
+                 api_token = "5fa1a3c865ed00ffe7518b0ff7a0c11a66183f286099931a7efc8a649b79",
+                 age = 68, 
+                 sex = "f",
+                 conditions = "dm"
+               ))
+```
+
+*Note:* We need to check if the request was successfully sent and the response has been obtained. 
+
+```{r}
+status_code(request)
+```
+
+Next we parse the content returned from the server as text using the `content` function.
+
+```{r}
+response <- content(request, as = "text", encoding = "UTF-8")
+View(response)
+```
+
+## Working with JSON in R
+
+A few R packages such as `jsonlite`, `rjson`, `RJSONIO`, provide basic JSON functionality for R users and other packages (e.g., `mongolite`). We will use the package `jsonlite` for the demo (it is also part of the `tidyverse`)
+
+```{r}
+library(jsonlite)
+```
+
+The function `fromJSON()` will convert JSON document into a list 
+
+```{r}
+list_recs <- fromJSON(response)
+glimpse(list_recs)
+```
+
+We extract data by extracting the first component of `list_recs`
+
+```{r}
+df <- list_recs$data
+```
+
+## Another example of JSON data
+
+```{r}
+data <- '[
+{
+    "Prof": "Gonzalez",
+    "Classes": [
+      "CS186", 
+      { "Name": "Data100", "Year": [2017, 2018] }
+    ],
+    "Tenured": false
+  },
+  {
+    "Prof": "Nolan",
+    "Classes": [
+      "Stat133", "Stat153", "Stat198", "Data100"
+    ],
+    "Tenured": true
+  }
+]'
+data
+```
+
+*Note:* The `\n` in the string `data` is a newline character, which is used to signify the end of a line of the text and the start of the new one.
+
+We can use the function `cat()` to display a string without its control characters (e.g., newline characters).
+
+```{r}
+cat(data)
+```
+
+
+we use `fromJSON` to parse an JSON object:
+
+```{r}
+json_data <- fromJSON(data)
+```
+
+Examine the structure of the parsed JSON object:
+
+```{r}
+glimpse(json_data)
+str(json_data)
+```
+
+The overall structure of `json_data` is a data frame, which allows use to access individual columns via indexing or `$`
+
+```{r}
+json_data$Prof
+json_data[ , -2]
+```
+
+Accessing data in `list` format is tricker and requires using the list indexing `[[ ... ]]`. For example, to read data about the `Data 100` class from Prof Gonzales
+
+```{r}
+json_data$Classes[[1]][[2]]
+json_data$Classes[[1]][[2]][["Year"]]
+```
+
+
+
