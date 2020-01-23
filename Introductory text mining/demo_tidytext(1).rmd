@@ -1,0 +1,200 @@
+---
+title: "Demo on tidy text format"
+output: html_notebook
+---
+
+Using tidy data principles can make many text mining tasks easier, more effective, and consistent with tools already in wide use. Much of the infrastructure needed for text mining with tidy data frames already exists in packages like `dplyr`, `tidyr`, `stringr` and `ggplot2`. The new package `tidytext` provides additional functions specialising text mining.
+
+```{r}
+# Uncomment if you have not installed the package
+#install.packages("tidytext")
+library(tidytext)
+library(tidyverse)
+```
+
+
+# The `unnest_tokens` function
+
+Emily Dickinson wrote some lovely text in her time.
+
+```{r}
+text <- c("Because I could not stop for Death -",
+          "He kindly stopped for me -",
+          "The Carriage held but just Ourselves -",
+          "and Immortality")
+text
+```
+
+We can put those line into a data frame (table) format:
+
+```{r}
+text_df <- tibble(line = 1:4, text = text)
+text_df
+```
+
+The simple tokenization can be done simply as:
+
+```{r}
+text_df %>% unnest_tokens(word, text)
+```
+
+**Question:** In a few words, describe what the `unnest_token` does.
+casefolding, lemmezation
+
+# Tidying the works of Jane Austen
+
+The package `janeaustenr` contains the text of Jane Austen's 6 completed, published novels. 
+
+```{r}
+#install.packages("janeaustenr")
+library(janeaustenr)
+
+austen_books() %>% nrow()
+austen_books() %>% head(10)
+```
+
+We will start by adding the line numbers and the chapter numbers.
+
+```{r}
+original_books <- austen_books() %>%
+  group_by(book) %>%
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, regex("^chapter [\\divxlc]",
+                                                 ignore_case = TRUE)))) %>%
+  ungroup()
+original_books
+```
+
+**Question:** Let's tidy all Jane Austen's books. The tidy version should be stored in `tidy_books`
+
+```{r}
+tidy_books <- original_books %>% 
+  unnest_tokens(word, text)
+tidy_books
+```
+
+
+The package `tidytext` has a collection of stop words in the dataset `stop_words`. We can simply remove stop words by using `anti_join`
+```{r}
+stop_words
+```
+
+
+```{r}
+tidy_books <- tidy_books %>% anti_join(stop_words, by = "word")
+```
+
+We can also use dplyr's count() to find the most common words in all the books as a whole.
+
+```{r}
+tidy_books %>% count(word, sort = TRUE) 
+```
+
+
+
+
+Similar to R Markdown, some of words are with underscores around them to indicate emphasis (like italics).
+
+```{r}
+tidy_books %>% arrange(word)
+```
+
+**Question:** Remove all the word formating in the column `word`
+
+```{r}
+# Replace ... with your codes.
+tidy_books <- tidy_books %>% 
+  mutate(word = str_extract(word, regex("[a-z]*"))) %>% 
+  filter(word != "") 
+tidy_books %>% arrange(word)
+```
+
+
+A typical step in text analysis after tokenization is to remove the stop words. Instead of performing the task, let's explore the effect of stop words in the analysis.
+# stops words help to stop repeating common words
+```{r}
+tidy_books_with_stop_words <- tidy_books
+tidy_books <- tidy_books %>% anti_join(stop_words, by = "word")
+tidy_books
+```
+
+The word counts and frequencies are computed 
+
+```{r}
+freq_table <- tidy_books %>% count(word, sort = TRUE) %>% 
+  mutate(proportion = n/sum(n))
+freq_table
+```
+
+**Question:** How does the most common words table look like if we keep all the stop words?
+
+# Your codes goes here
+```{r}
+tidy_books_with_stop_words <- tidy_books %>% count(word, sort = TRUE) %>% 
+  mutate(proportion = n/sum(n))
+tidy_books_with_stop_words
+```
+
+Once we computed the frequency table, we can create various visualizations of the most common words
+
+```{r}
+freq_table %>% filter(n > 600) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot() + geom_col(aes(x = word, y = n)) + coord_flip()
+```
+
+Below is a word cloud, which use size and/or color of text to present their frequency. *Note:* the `wordcloud()` function uses frequencies, which must be computed before call the function. A word cloud usually displays 25-100 words.
+
+```{r}
+with(freq_table, wordcloud(word, n, max.words = 75))
+```
+
+**Question:** How does the word cloud look like if we include the stop word?
+
+
+# Jane Austen versus H.G. Wells
+
+A common task in text mining is to look at word frequencies, just like we have done above for Jane Austen's novels, and to compare frequencies across different texts. We can do this intuitively and smoothly using tidy data principles. We already have Jane Austen's works; let's get another set of texts to compare to. First, let's look at some science fiction and fantasy novels by H.G. Wells, who lived in the late 19th and early 20th centuries. Let's get *The Time Machine*, *The War of the Worlds*, *The Invisible Man*, and *The Island of Doctor Moreau*. We can access these works using `gutenberg_download()` from the `gutenbergr` package provides access to the public domain works from the [Project Gutenberg](https://www.gutenberg.org/) collection. By simply use the function `gutenberg_download()` and the book's ID, R will automatically access the library and download the text.
+
+```{r}
+#install.packages("gutenbergr")
+library(gutenbergr)
+hgwells <- gutenberg_download(c(35, 36, 5230, 159))
+```
+
+**Question:** Let tidy and clean up the text from HG Wells' novels.
+
+```{r}
+# Replace ... with codes to answer the above question.
+
+#tokenize
+tidied_hgwells <- hgwells %>% 
+  unnest_tokens(word, text) %>% 
+    mutate(word = str_extract(word, regex("[a-z]*"))) %>% 
+  filter(word != "") %>% 
+  anti_join(stop_words)
+tidied_hgwells
+```
+
+Let's calculate the frequency for each word and bind the two data set together.
+
+```{r}
+frequency <- bind_rows(mutate(tidy_books, author = "Jane Austen"),
+                       mutate(tidied_hgwells, author = "H.G. Wells")) %>%
+  count(author, word) %>% 
+  group_by(author) %>%
+  mutate(proportion = n/sum(n)) %>%
+  select(-n) %>%
+  spread(author, proportion)
+frequency
+```
+
+We finish with a scatterplot of the frequencies
+
+```{r}
+ggplot(frequency, aes(x = `Jane Austen`, y = `H.G. Wells`)) +
+  geom_jitter(alpha = 0.1, width = .3, height = .3) +
+  geom_text(aes(label = word), check_overlap = TRUE) +
+  geom_abline(lty = 2) +
+  scale_x_log10() + scale_y_log10()
+```
