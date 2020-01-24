@@ -9,3 +9,4 @@ Projects Listed
 4. Intro to MongoDB
 5. Introductory to Text Mining
 6. Sentiment Analysis
+7. Working with Text
